@@ -1,13 +1,13 @@
 """
 Locust load test for /reward/decide endpoint.
 
-Target: ~300 req/s with 50 users, spawn rate 10
+Target: ~300 req/s with 100 users, spawn rate 20
 
 Run from the project root:
     locust -f tests/locustfile.py --host=http://localhost:8000
 
-For a higher-stress test (150 users, no wait):
-    locust -f tests/locustfile.py --host=http://localhost:8000 --users 150 --spawn-rate 30 --headless --run-time 60s
+For a higher-stress test (100 users, no wait):
+    locust -f tests/locustfile.py --host=http://localhost:8000 --users 100 --spawn-rate 20 --headless --run-time 60s
 """
 import uuid
 import random

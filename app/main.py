@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
         cache = MemoryCacheClient()
 
     persona_service = PersonaService()
-    decision_engine = DecisionEngine(cache, persona_service)
+    decision_engine = await DecisionEngine.create(cache, persona_service)
     idempotency_service = IdempotencyService(cache)
 
     # Attach singletons to app.state so routes can access them
