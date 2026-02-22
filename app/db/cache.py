@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 class CacheClient(abc.ABC):
+    """
+    Abstract base class for cache client.
+    """
     @abc.abstractmethod
     async def get(self, key: str) -> Optional[Any]:
         pass
@@ -32,15 +35,22 @@ class CacheClient(abc.ABC):
 
     @abc.abstractmethod
     async def pipeline_incr_expire(self, key: str, amount: int, expire_seconds: int) -> int:
-        """Atomically increment key and set expiry in one pipeline round-trip."""
+        """
+        Atomically increment key and set expiry in one pipeline round-trip.
+        """
         pass
 
     async def close(self) -> None:
-        """Optional cleanup hook."""
+        """
+        Optional cleanup hook.
+        """
         pass
 
 
 class RedisCacheClient(CacheClient):
+    """
+    Redis cache client.
+    """
     def __init__(self, host: str, port: int, db: int, max_connections: int = 200):
         self._pool = ConnectionPool(
             host=host,
@@ -105,6 +115,9 @@ class RedisCacheClient(CacheClient):
 
 
 class MemoryCacheClient(CacheClient):
+    """
+    In-memory cache client.
+    """
     def __init__(self):
         self.store = {}
         self.expiries = {}
@@ -153,7 +166,9 @@ class MemoryCacheClient(CacheClient):
         return True
 
     async def pipeline_incr_expire(self, key: str, amount: int, expire_seconds: int) -> int:
-        """In-memory equivalent: incr then set expiry if not already set."""
+        """
+        In-memory equivalent: incr then set expiry if not already set.
+        """
         if self._is_expired(key):
             self.store[key] = "0"
         current_val = int(self.store.get(key, "0"))

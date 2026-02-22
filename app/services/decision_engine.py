@@ -19,10 +19,6 @@ class DecisionEngine:
         self.persona_service = persona_service
         self._refresh_policy()
 
-    # ------------------------------------------------------------------
-    # Policy helpers
-    # ------------------------------------------------------------------
-
     def _refresh_policy(self) -> None:
         """
         Cache policy and commonly-accessed sub-dicts as instance attrs.
@@ -74,7 +70,9 @@ class DecisionEngine:
         await self.cache.pipeline_incr_expire(cac_key, amount, expire_seconds)
 
     async def update_last_reward_ts(self, user_id: str, timestamp: datetime) -> None:
-        """Update last reward timestamp."""
+        """
+        Update last reward timestamp.
+        """
         last_reward_key = self._get_last_reward_key(user_id)
         await self.cache.set(last_reward_key, timestamp.isoformat(), ttl=86400)
 
@@ -114,7 +112,9 @@ class DecisionEngine:
         cac_remaining: int,
         reason_codes: List[str],
     ) -> RewardType:
-        """Deterministic reward selection. No I/O."""
+        """
+        Deterministic reward selection. No I/O.
+        """
         # Feature flag: force XP
         if self._feature_flags.get("force_xp_mode"):
             reason_codes.append(self._reason_map.get("prefer_xp", "PREFER_XP_MODE"))
@@ -144,7 +144,9 @@ class DecisionEngine:
     def _calculate_xp(
         self, amount: float, persona: str, reason_codes: List[str]
     ) -> Tuple[int, dict]:
-        """Calculate XP reward. No I/O."""
+        """
+        Calculate XP reward. No I/O.
+        """
         xp_per_rupee = self._xp_config.get("xp_per_rupee", 0)
         max_xp = self._xp_config.get("max_xp_per_txn", 0)
         multiplier = self._persona_multipliers.get(persona, 1.0)
@@ -163,7 +165,9 @@ class DecisionEngine:
         return final_xp, meta
 
     def _calculate_monetary_reward(self, reward_type: RewardType, amount: float) -> int:
-        """Calculate monetary reward value. No I/O."""
+        """
+        Calculate monetary reward value. No I/O.
+        """
         if reward_type == RewardType.XP:
             return 0
 
@@ -175,6 +179,9 @@ class DecisionEngine:
         return max(reward_config.get("min", 0), min(calculated_value, reward_config.get("max", 0)))
 
     def _create_cooldown_response(self, request: RewardRequest, persona: str) -> RewardResponse:
+        """
+        Create a cooldown response.
+        """
         reason_codes: List[str] = [self._reason_map.get("cooldown_active", "COOLDOWN_ACTIVE")]
         xp, xp_meta = self._calculate_xp(request.amount, persona, reason_codes)
         return RewardResponse(
@@ -187,11 +194,10 @@ class DecisionEngine:
             meta={"persona": persona, "in_cooldown": True, **xp_meta},
         )
 
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
-
     async def calculate_reward(self, request: RewardRequest) -> RewardResponse:
+        """
+        Calculate reward for a transaction.
+        """
         persona = self.persona_service.get_persona(request.user_id)
 
         # Batch the two async lookups into one gather call
@@ -242,10 +248,6 @@ class DecisionEngine:
             meta=meta,
         )
 
-
-# ---------------------------------------------------------------------------
-# Helper coroutine for conditional gather
-# ---------------------------------------------------------------------------
 
 async def _noop_false() -> bool:
     return False

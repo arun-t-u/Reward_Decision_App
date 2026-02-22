@@ -16,14 +16,18 @@ class TransactionType(str, Enum):
 
 
 class RewardType(str, Enum):
-    """Valid reward types."""
+    """
+    Valid reward types.
+    """
     XP = "XP"
     CHECKOUT = "CHECKOUT"
     GOLD = "GOLD"
 
 
 class Persona(str, Enum):
-    """User persona types."""
+    """
+    User persona types.
+    """
     NEW = "NEW"
     RETURNING = "RETURNING"
     POWER = "POWER"
@@ -43,7 +47,9 @@ class RewardRequest(BaseModel):
     @field_validator('txn_id', 'user_id', 'merchant_id')
     @classmethod
     def validate_ids(cls, v: str) -> str:
-        """Validate that IDs are non-empty strings."""
+        """
+        Validate that IDs are non-empty strings.
+        """
         if not v or not v.strip():
             raise ValueError("ID cannot be empty")
         return v.strip()

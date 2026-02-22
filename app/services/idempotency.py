@@ -8,17 +8,29 @@ from app.core.config import get_settings
 settings = get_settings()
 
 class IdempotencyService:
+    """
+    Idempotency service to prevent duplicate reward calculations.
+    """
     def __init__(self, cache: CacheClient):
         self.cache = cache
         self.policy = self._get_policy()
 
     def _get_policy(self):
+        """
+        Get the policy from the settings.
+        """
         return settings.get_policy()
 
     def _get_key(self, txn_id: str, user_id: str, merchant_id: str) -> str:
+        """
+        Get the key for the idempotency service.
+        """
         return f"idem:{txn_id}:{user_id}:{merchant_id}"
 
     async def get_stored_response(self, txn_id: str, user_id: str, merchant_id: str) -> Optional[RewardResponse]:
+        """
+        Get the stored response for the given transaction.
+        """
         key = self._get_key(txn_id, user_id, merchant_id)
         stored = await self.cache.get(key)
         if stored:
@@ -27,6 +39,9 @@ class IdempotencyService:
         return None
 
     async def store_response(self, txn_id: str, user_id: str, merchant_id: str, response: RewardResponse):
+        """
+        Store the response for the given transaction.
+        """
         key = self._get_key(txn_id, user_id, merchant_id)
        
         try:

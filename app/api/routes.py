@@ -15,6 +15,18 @@ async def decide_reward(
     decision_engine: DecisionEngine = Depends(get_decision_engine),
     idempotency_service: IdempotencyService = Depends(get_idempotency_service),
 ) -> RewardResponse:
+    """
+    Reward Decision Endpoint.
+
+    Args:
+        request: Reward request.
+        background_tasks: Background tasks.
+        decision_engine: Decision engine.
+        idempotency_service: Idempotency service.
+
+    Returns:
+        Reward response.
+    """
     # Check Idempotency 
     cached_response = await idempotency_service.get_stored_response(
         request.txn_id, request.user_id, request.merchant_id
@@ -48,7 +60,7 @@ async def _run_background_updates(
 ) -> None:
     """
     Run all post-response Redis writes concurrently.
-    Runs *after* the HTTP response has already been sent to the client.
+    Runs after the HTTP response has already been sent to the client.
     """
     update_tasks = [
         # # Store Result (Idempotency)
