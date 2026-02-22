@@ -52,6 +52,12 @@ class DecisionEngine:
             amount: Amount to add to CAC usage
         
         """
+        # Normalize to UTC
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        else:
+            date = date.astimezone(timezone.utc)
+        
         cac_key = self._get_cac_key(user_id, date)
 
         # Increment first
@@ -356,7 +362,6 @@ class DecisionEngine:
 
         for reward_type in normalized_weights.keys():
             cumulative += normalized_weights[reward_type]
-            print(f"{reward_type = }  {normalized_value =}  {cumulative =}")
             if normalized_value <= cumulative:
                 return RewardType(reward_type)
         

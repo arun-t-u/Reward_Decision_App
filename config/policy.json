@@ -23,12 +23,12 @@
     "reward_values": {
       "CHECKOUT": {
         "min": 5,
-        "max": 500,
+        "max": 50,
         "percent_of_amount": 0.005
       },
       "GOLD": {
         "min": 15,
-        "max": 1000,
+        "max": 40,
         "percent_of_amount": 0.003
       }
     },

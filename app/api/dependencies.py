@@ -18,5 +18,4 @@ def get_cache() -> CacheClient:
              )
         else:
              _cache_client = MemoryCacheClient()
-    print(_cache_client)
     return _cache_client

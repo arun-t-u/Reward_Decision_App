@@ -21,7 +21,6 @@ class Settings:
     REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
     REDIS_DB = int(os.getenv("REDIS_DB", 0))
 
-    IDEMPOTENCY_TTL = int(os.getenv("IDEMPOTENCY_TTL", 24 * 60 * 60))
 
     # Policy reload interval
     POLICY_REFRESH_SECONDS = int(os.getenv("POLICY_REFRESH_SECONDS", 10))
@@ -44,6 +43,7 @@ class Settings:
                     policy = json.load(f)
                 self._policy_cache = policy
                 self._policy_last_loaded = now
+                
             except Exception as e:
                 # Keep old policy if new one is broken
                 print(f"Policy reload failed: {e}")

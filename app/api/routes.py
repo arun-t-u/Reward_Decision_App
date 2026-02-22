@@ -23,7 +23,7 @@ async def decide_reward(
     cached_response = await idempotency_service.get_stored_response(
         request.txn_id, request.user_id, request.merchant_id
     )
-    print(f"{cached_response =}")
+
     if cached_response:
         return cached_response
     
@@ -39,7 +39,6 @@ async def decide_reward(
 
     # Update CAC tracking
     if response.reward_value > 0:
-        print("----before update cac----")
         update_tasks.append(decision_engine._update_cac(request.user_id, request.ts, response.reward_value))
         # await self._update_cac(request.user_id, request.ts, reward_value)
 
