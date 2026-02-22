@@ -14,16 +14,32 @@ settings = get_settings()
 
 
 class DecisionEngine:
-    def __init__(self, cache: CacheClient, persona_service: PersonaService):
+    """
+    Deterministic reward decision engine.
+    """
+
+    def __init__(self, cache: CacheClient, persona_service: PersonaService, policy: dict) -> None:
+        """
+        Private constructor. Use DecisionEngine.create() instead.
+        """
         self.cache = cache
         self.persona_service = persona_service
-        self._refresh_policy()
+        self._snapshot_policy(policy)
 
-    def _refresh_policy(self) -> None:
+    @classmethod
+    async def create(cls, cache: CacheClient, persona_service: PersonaService) -> "DecisionEngine":
         """
-        Cache policy and commonly-accessed sub-dicts as instance attrs.
+        Async factory — awaits the initial policy load then returns a ready engine.
         """
-        policy = settings.get_policy()
+        policy = await settings.get_policy()
+        return cls(cache, persona_service, policy)
+
+    def _snapshot_policy(self, policy: dict) -> None:
+        """
+        Cache policy sub-dicts as instance attributes for fast access.
+        Called at startup and on every hot-reload.
+        """
+        self._policy_dict = policy          # identity reference for change detection
         self.policy = policy
         self._feature_flags: dict = policy.get("feature_flags", {})
         self._reason_map: dict = policy.get("reason_codes", {})
@@ -39,6 +55,14 @@ class DecisionEngine:
         total_weight = sum(self._reward_types.values()) or 1
         self._norm_weights: dict = {k: v / total_weight for k, v in self._reward_types.items()}
 
+    async def _refresh_policy(self) -> None:
+        """
+        Re-snapshot policy from settings (async).
+        Called automatically when calculate_reward detects a policy version change.
+        """
+        policy = await settings.get_policy()
+        self._snapshot_policy(policy)
+
     @staticmethod
     def _get_cac_key(user_id: str, date: datetime) -> str:
         date_str = date.strftime("%Y-%m-%d")
@@ -50,7 +74,7 @@ class DecisionEngine:
 
     async def update_cac(self, user_id: str, date: datetime, amount: int) -> None:
         """
-        Increment daily CAC usage using a single pipeline round-trip
+        Increment daily CAC usage using a single pipeline round-trip.
         """
         if date.tzinfo is None:
             date = date.replace(tzinfo=timezone.utc)
@@ -198,6 +222,10 @@ class DecisionEngine:
         """
         Calculate reward for a transaction.
         """
+        current_policy = await settings.get_policy()
+        if current_policy is not self._policy_dict:
+            self._snapshot_policy(current_policy)
+
         persona = self.persona_service.get_persona(request.user_id)
 
         # Batch the two async lookups into one gather call
