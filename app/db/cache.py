@@ -3,9 +3,11 @@ import time
 import json
 from typing import Optional, Any
 import redis.asyncio as redis
+from redis.asyncio import ConnectionPool
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 class CacheClient(abc.ABC):
     @abc.abstractmethod
@@ -19,7 +21,7 @@ class CacheClient(abc.ABC):
     @abc.abstractmethod
     async def incr(self, key: str, amount: int = 1) -> int:
         pass
-        
+
     @abc.abstractmethod
     async def ttl(self, key: str) -> int:
         pass
@@ -28,12 +30,29 @@ class CacheClient(abc.ABC):
     async def expire(self, key: str, ttl: int) -> bool:
         pass
 
+    @abc.abstractmethod
+    async def pipeline_incr_expire(self, key: str, amount: int, expire_seconds: int) -> int:
+        """Atomically increment key and set expiry in one pipeline round-trip."""
+        pass
+
+    async def close(self) -> None:
+        """Optional cleanup hook."""
+        pass
+
 
 class RedisCacheClient(CacheClient):
-    def __init__(self, host: str, port: int, db: int):
-        self.client = redis.Redis(host=host, port=port, db=db, decode_responses=True)
-        # Real connection check usually happens on first usage or startup event.
-        logger.info(f"Initialized Redis Client at {host}:{port}")
+    def __init__(self, host: str, port: int, db: int, max_connections: int = 200):
+        self._pool = ConnectionPool(
+            host=host,
+            port=port,
+            db=db,
+            decode_responses=True,
+            max_connections=max_connections,
+            socket_timeout=1.0,
+            socket_connect_timeout=1.0,
+        )
+        self.client = redis.Redis(connection_pool=self._pool)
+        logger.info(f"Initialized Redis Client at {host}:{port} (pool={max_connections})")
 
     async def get(self, key: str) -> Optional[Any]:
         try:
@@ -52,7 +71,7 @@ class RedisCacheClient(CacheClient):
             return await self.client.incrby(key, amount)
         except redis.RedisError:
             return 0
-            
+
     async def ttl(self, key: str) -> int:
         try:
             return await self.client.ttl(key)
@@ -64,6 +83,25 @@ class RedisCacheClient(CacheClient):
             return await self.client.expire(key, ttl)
         except redis.RedisError:
             return False
+
+    async def pipeline_incr_expire(self, key: str, amount: int, expire_seconds: int) -> int:
+        """
+        INCR + EXPIRE in a single pipeline round-trip.
+        Uses NX on EXPIRE so we only set expiry when first created.
+        Returns the new counter value.
+        """
+        try:
+            async with self.client.pipeline(transaction=False) as pipe:
+                pipe.incrby(key, amount)
+                pipe.expire(key, expire_seconds, nx=True)  # NX = only set if no expiry yet
+                results = await pipe.execute()
+            return results[0]
+        except redis.RedisError:
+            return 0
+
+    async def close(self) -> None:
+        await self._pool.disconnect()
+        logger.info("Redis connection pool disconnected")
 
 
 class MemoryCacheClient(CacheClient):
@@ -95,13 +133,12 @@ class MemoryCacheClient(CacheClient):
 
     async def incr(self, key: str, amount: int = 1) -> int:
         if self._is_expired(key):
-             self.store[key] = "0"
-        
+            self.store[key] = "0"
         current_val = int(self.store.get(key, "0"))
         new_val = current_val + amount
         self.store[key] = str(new_val)
         return new_val
-        
+
     async def ttl(self, key: str) -> int:
         if self._is_expired(key) or key not in self.store:
             return -2
@@ -114,3 +151,15 @@ class MemoryCacheClient(CacheClient):
             return False
         self.expiries[key] = time.time() + ttl
         return True
+
+    async def pipeline_incr_expire(self, key: str, amount: int, expire_seconds: int) -> int:
+        """In-memory equivalent: incr then set expiry if not already set."""
+        if self._is_expired(key):
+            self.store[key] = "0"
+        current_val = int(self.store.get(key, "0"))
+        new_val = current_val + amount
+        self.store[key] = str(new_val)
+        # Only set expiry if not already scheduled (NX semantics)
+        if key not in self.expiries:
+            self.expiries[key] = time.time() + expire_seconds
+        return new_val

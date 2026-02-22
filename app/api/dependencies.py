@@ -1,21 +1,16 @@
-from fastapi import Depends
-from app.core.config import get_settings
-from app.db.cache import RedisCacheClient, MemoryCacheClient, CacheClient
+from fastapi import Request, Depends
+from app.db.cache import CacheClient
+from app.services.decision_engine import DecisionEngine
+from app.services.idempotency import IdempotencyService
 
-settings = get_settings()
 
-# Global cache instance (initialized on startup in main.py ideally, but lazy here for simplicity)
-_cache_client: CacheClient = None
+def get_cache(request: Request) -> CacheClient:
+    return request.app.state.cache
 
-def get_cache() -> CacheClient:
-    global _cache_client
-    if _cache_client is None:
-        if settings.REDIS_HOST:
-             _cache_client = RedisCacheClient(
-                 host=settings.REDIS_HOST,
-                 port=settings.REDIS_PORT,
-                 db=settings.REDIS_DB
-             )
-        else:
-             _cache_client = MemoryCacheClient()
-    return _cache_client
+
+def get_decision_engine(request: Request) -> DecisionEngine:
+    return request.app.state.decision_engine
+
+
+def get_idempotency_service(request: Request) -> IdempotencyService:
+    return request.app.state.idempotency_service
