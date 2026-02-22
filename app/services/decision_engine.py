@@ -19,27 +19,21 @@ class DecisionEngine:
     """
 
     def __init__(self, cache: CacheClient, persona_service: PersonaService, policy: dict) -> None:
-        """
-        Private constructor. Use DecisionEngine.create() instead.
-        """
         self.cache = cache
         self.persona_service = persona_service
         self._snapshot_policy(policy)
 
     @classmethod
     async def create(cls, cache: CacheClient, persona_service: PersonaService) -> "DecisionEngine":
-        """
-        Async factory — awaits the initial policy load then returns a ready engine.
-        """
-        policy = await settings.get_policy()
+        """Async factory — policy is loaded synchronously (already cached by lifespan)."""
+        policy = settings.get_policy()
         return cls(cache, persona_service, policy)
 
     def _snapshot_policy(self, policy: dict) -> None:
         """
         Cache policy sub-dicts as instance attributes for fast access.
-        Called at startup and on every hot-reload.
         """
-        self._policy_dict = policy          # identity reference for change detection
+        self._policy_dict = policy
         self.policy = policy
         self._feature_flags: dict = policy.get("feature_flags", {})
         self._reason_map: dict = policy.get("reason_codes", {})
@@ -57,10 +51,9 @@ class DecisionEngine:
 
     async def _refresh_policy(self) -> None:
         """
-        Re-snapshot policy from settings (async).
-        Called automatically when calculate_reward detects a policy version change.
+        Re-snapshot policy when a hot-reload is detected (sync get_policy).
         """
-        policy = await settings.get_policy()
+        policy = settings.get_policy()
         self._snapshot_policy(policy)
 
     @staticmethod
@@ -222,7 +215,7 @@ class DecisionEngine:
         """
         Calculate reward for a transaction.
         """
-        current_policy = await settings.get_policy()
+        current_policy = settings.get_policy()          # ← sync, zero-overhead
         if current_policy is not self._policy_dict:
             self._snapshot_policy(current_policy)
 

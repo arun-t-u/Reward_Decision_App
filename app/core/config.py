@@ -1,11 +1,11 @@
 from pathlib import Path
-import json
-import time
-import os
 import asyncio
+import json
 import logging
+import os
+import time
 from functools import lru_cache
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 logger = logging.getLogger(__name__)
@@ -15,17 +15,18 @@ class Settings:
     """
     Application-level configuration and dynamic policy loader.
 
-    - Static infra config loaded once.
-    - Policy file auto-refreshes based on TTL.
-    - Thread-safe / async-safe.
+    Background:
+        settings.start_reload_loop()  →  asyncio Task that wakes every
+        POLICY_REFRESH_SECONDS and reloads the file via a thread-pool
+        executor so the event loop is never blocked.
     """
+
     BASE_DIR = Path(__file__).resolve().parent.parent.parent
     # Policy file path (mounted file)
     POLICY_PATH = Path(
         os.getenv("POLICY_PATH", BASE_DIR / "config" / "policy.json")
     )
 
-    # Infra / environment config (STATIC)
     REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
     REDIS_DB = int(os.getenv("REDIS_DB", 0))
@@ -34,68 +35,74 @@ class Settings:
     # Policy reload interval
     POLICY_REFRESH_SECONDS = int(os.getenv("POLICY_REFRESH_SECONDS", 10))
 
-    _policy_cache: Dict[str, Any] | None = None
-    _policy_last_loaded: float = 0
-    _lock = asyncio.Lock()
-
-    async def get_policy(self) -> Dict[str, Any]:
+    _policy_cache: Optional[Dict[str, Any]] = None
+    
+    def get_policy(self) -> Dict[str, Any]:
         """
-        Returns policy from cache.
-        Reloads from file if TTL expired.
-
-        Async-safe:
-        Only one request reloads policy at a time.
+        Return the current (cached) policy dict.
         """
-        now = time.time()
-
-        # Fast path (no locking)
-        if (
-            self._policy_cache is not None
-            and now - self._policy_last_loaded < self.POLICY_REFRESH_SECONDS
-        ):
-            return self._policy_cache
-
-        # Slow path (reload needed)
-        async with self._lock:
-            # Double-check inside lock
-            now = time.time()
-            if (
-                self._policy_cache is not None
-                and now - self._policy_last_loaded < self.POLICY_REFRESH_SECONDS
-            ):
-                return self._policy_cache
-
-            try:
-                logger.info("Reloading policy from file...")
-                with open(self.POLICY_PATH, "r") as f:
-                    policy = json.load(f)
-
-                self._policy_cache = policy
-                self._policy_last_loaded = now
-
-                logger.info("Policy reloaded successfully.")
-
-            except Exception as e:
-                logger.error(f"Policy reload failed: {e}")
-
-                # If first load ever fails, raise error
-                if self._policy_cache is None:
-                    raise RuntimeError(
-                        "Initial policy load failed. Cannot continue."
-                    )
-
-                # Otherwise keep old policy
-                logger.warning("Using last known good policy.")
-
+        if self._policy_cache is None:
+            # Synchronous fallback for the very first call (startup only)
+            self._sync_load()
         return self._policy_cache
+
+    async def start_reload_loop(self) -> None:
+        """
+        Async infinite loop: reload policy file every POLICY_REFRESH_SECONDS.
+        Run as an asyncio.Task from the lifespan context manager.
+
+        The file I/O is offloaded to the default thread-pool executor so the
+        event loop is never blocked even for large policy files.
+        """
+        # First load (blocking once is fine at startup, before traffic arrives)
+        await self._async_load()
+
+        while True:
+            await asyncio.sleep(self.POLICY_REFRESH_SECONDS)
+            await self._async_load()
+
+    def _sync_load(self) -> None:
+        """
+        Synchronous file read — only used as a startup fallback.
+        """
+        try:
+            with open(self.POLICY_PATH, "r") as f:
+                policy = json.load(f)
+            self._policy_cache = policy
+            logger.info("Policy loaded (sync).")
+        except Exception as exc:
+            logger.error("Policy load failed: %s", exc)
+            if self._policy_cache is None:
+                raise RuntimeError("Initial policy load failed.") from exc
+            logger.warning("Keeping last known good policy.")
+
+    async def _async_load(self) -> None:
+        """
+        Non-blocking file read via thread-pool executor.
+        """
+        loop = asyncio.get_running_loop()
+        try:
+            policy = await loop.run_in_executor(None, self._read_policy_file)
+            self._policy_cache = policy
+            logger.info("Policy reloaded (async).")
+        except Exception as exc:
+            logger.error("Policy reload failed: %s", exc)
+            if self._policy_cache is None:
+                raise RuntimeError("Initial policy load failed.") from exc
+            logger.warning("Keeping last known good policy.")
+
+    def _read_policy_file(self) -> Dict[str, Any]:
+        """
+        Pure blocking helper — called inside thread-pool executor.
+        """
+        with open(self.POLICY_PATH, "r") as f:
+            return json.load(f)
 
 
 @lru_cache()
 def get_settings() -> Settings:
     """
-    Settings are cached because they do not change
-    during application lifetime.
+    Settings singleton — cached for the process lifetime.
     """
     logger.info("Initializing Settings singleton")
     return Settings()
-

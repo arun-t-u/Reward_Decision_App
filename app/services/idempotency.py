@@ -46,7 +46,7 @@ class IdempotencyService:
         """
         key = self._get_key(txn_id, user_id, merchant_id)
 
-        policy = await settings.get_policy()
+        policy = settings.get_policy()
         ttl = int(policy.get("idempotency_ttl", 86400))
 
         try:

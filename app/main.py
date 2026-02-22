@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.api.routes import router as api_router
@@ -28,6 +29,11 @@ async def lifespan(app: FastAPI):
         cache = MemoryCacheClient()
 
     persona_service = PersonaService()
+
+    # Start background policy reload loop — initial load happens here,
+    # before any requests are served.
+    reload_task = asyncio.create_task(settings.start_reload_loop())
+
     decision_engine = await DecisionEngine.create(cache, persona_service)
     idempotency_service = IdempotencyService(cache)
 
@@ -40,6 +46,11 @@ async def lifespan(app: FastAPI):
     yield  # Application is running
 
     # Shutdown cleanup
+    reload_task.cancel()
+    try:
+        await reload_task
+    except asyncio.CancelledError:
+        pass
     await cache.close()
 
 
@@ -62,8 +73,8 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         loop="asyncio",  # switch to "uvloop" on Linux for extra perf
-        reload=True,
-        access_log=True,
+        reload=False,
+        access_log=False,
     )
 
 
