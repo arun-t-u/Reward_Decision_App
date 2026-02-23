@@ -215,7 +215,7 @@ class DecisionEngine:
         """
         Calculate reward for a transaction.
         """
-        current_policy = settings.get_policy()          # ← sync, zero-overhead
+        current_policy = settings.get_policy()
         if current_policy is not self._policy_dict:
             self._snapshot_policy(current_policy)
 
